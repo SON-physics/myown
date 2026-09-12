@@ -407,25 +407,92 @@ function makeMemo(memo) {
   const div = document.createElement("div");
   div.className = "memo";
 
-  // 최고 관리자(admin) 또는 승인된 교사(teacher)만 삭제 버튼이 노출됩니다.
+  // 최고 관리자(admin) 또는 승인된 교사(teacher)만 관리(삭제, AI 코멘트) 권한을 가집니다.
   const hasManagementPermission = (currentUserRole === "admin" || currentUserRole === "teacher");
 
+  // 상단 바 (삭제 버튼)
   if (currentUser && hasManagementPermission) {
+    const header = document.createElement("div");
+    header.className = "memo-header";
+
     const del = document.createElement("button");
+    del.className = "memo-delete-btn";
     del.textContent = "×";
-    del.title = "메모 삭제 (관리자/교사 전용)";
+    del.title = "메모 삭제 (교사/관리자 전용)";
     del.addEventListener("click", async function () {
       if (confirm("이 메모를 삭제하시겠습니까?")) {
         await deleteMemo(memo.id);
         await render();
       }
     });
-    div.appendChild(del);
+    header.appendChild(del);
+    div.appendChild(header);
   }
 
-  const span = document.createElement("span");
-  span.textContent = memo.text;
-  div.appendChild(span);
+  // 본문 텍스트
+  const textElem = document.createElement("div");
+  textElem.className = "memo-text";
+  textElem.textContent = memo.text;
+  div.appendChild(textElem);
+
+  // AI 코멘트가 있는 경우 화면에 말풍선 박스로 표시
+  if (memo.aiComment) {
+    const aiBox = document.createElement("div");
+    aiBox.className = "ai-comment-box";
+
+    const aiHeader = document.createElement("div");
+    aiHeader.className = "ai-comment-header";
+    aiHeader.innerHTML = "🤖 <span>선생님 도우미 AI</span>";
+    aiBox.appendChild(aiHeader);
+
+    const aiText = document.createElement("div");
+    aiText.className = "ai-comment-text";
+    aiText.textContent = memo.aiComment;
+    aiBox.appendChild(aiText);
+
+    div.appendChild(aiBox);
+  }
+
+  // 교사/관리자 전용: AI 코멘트 달기/재생성 버튼
+  if (currentUser && hasManagementPermission) {
+    const aiBtn = document.createElement("button");
+    aiBtn.className = "btn-ai";
+    aiBtn.textContent = memo.aiComment ? "🔄 AI 코멘트 재생성" : "🤖 AI 코멘트 달기";
+    aiBtn.title = "Gemini AI에게 격려 코멘트 작성을 요청합니다 (교사/관리자 전용)";
+
+    aiBtn.addEventListener("click", async function () {
+      aiBtn.disabled = true;
+      aiBtn.textContent = "🤖 코멘트 작성 중...";
+
+      try {
+        const res = await fetch("/api/gemini", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: memo.text })
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error || "코멘트 생성에 실패했습니다.");
+        }
+
+        // Firestore에 AI 코멘트 저장
+        await updateDoc(doc(db, "memos", memo.id), {
+          aiComment: data.comment,
+          aiCommentedAt: Date.now()
+        });
+
+        await render();
+      } catch (err) {
+        console.error("AI 코멘트 생성 오류:", err);
+        alert("AI 코멘트 오류: " + err.message);
+        aiBtn.disabled = false;
+        aiBtn.textContent = memo.aiComment ? "🔄 AI 코멘트 재생성" : "🤖 AI 코멘트 달기";
+      }
+    });
+
+    div.appendChild(aiBtn);
+  }
 
   return div;
 }
