@@ -21,13 +21,28 @@
     #wall { display: flex; flex-wrap: wrap; gap: 10px; }
     .memo { border: 1px solid #ddd; background: #fffde7; padding: 10px; width: 200px; font-size: 15px; }
     .memo button { float: right; }
+
+    /* 교사 신청 및 관리자 버튼 */
+    .btn-action { margin-left: 8px; padding: 4px 8px; font-size: 13px; cursor: pointer; border-radius: 4px; border: 1px solid #ccc; background: #fff; }
+    .btn-action:hover { background: #f0f0f0; }
+    .btn-primary { background: #1a73e8; color: #fff; border: none; }
+    .btn-primary:hover { background: #1557b0; }
+    .btn-danger { background: #d93025; color: #fff; border: none; }
+    .btn-danger:hover { background: #a52714; }
+
+    /* 모달 팝업 */
+    .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; z-index: 1000; }
+    .modal-content { background: #fff; padding: 20px; border-radius: 8px; width: 420px; max-width: 90%; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+    .modal-content h3 { margin-top: 0; }
+    .applicant-item { display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #eee; }
+    .applicant-info { font-size: 14px; }
   </style>
 </head>
 <body>
 
   <h1>우리 반 담벼락</h1>
 
-  <!-- 백엔드 2 시간에 여기에 로그인 버튼과 내 이름이 들어옵니다 -->
+  <!-- 로그인 및 교사 권한/신청 상태 영역 -->
   <div id="userArea">아직 로그인 기능이 없습니다.</div>
 
   <div id="writer">
@@ -36,6 +51,35 @@
 
   <!-- 메모는 app.js가 그립니다 -->
   <div id="wall"></div>
+
+  <!-- 교사 신청 모달 -->
+  <div id="applyModal" class="modal-overlay">
+    <div class="modal-content">
+      <h3>교사 가입 신청</h3>
+      <p style="font-size: 14px; color: #666;">교사 권한을 신청하시면 최고 관리자의 승인 후 모든 메모 관리(삭제 등) 권한을 획득하게 됩니다.</p>
+      <div style="margin: 15px 0;">
+        <label style="display:block; font-size:13px; margin-bottom:5px;">신청 사유 / 메모</label>
+        <textarea id="applyReason" rows="2" style="width: 100%; box-sizing: border-box;" placeholder="예: 3학년 2반 담임교사"></textarea>
+      </div>
+      <div style="text-align: right; gap: 8px; display: flex; justify-content: flex-end;">
+        <button id="cancelApplyBtn" class="btn-action">취소</button>
+        <button id="submitApplyBtn" class="btn-action btn-primary">신청 제출</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 최고 관리자: 교사 신청 관리 모달 -->
+  <div id="adminModal" class="modal-overlay">
+    <div class="modal-content" style="width: 500px;">
+      <h3>교사 가입 신청 승인 관리</h3>
+      <div id="applicantList" style="max-height: 300px; overflow-y: auto; margin: 15px 0;">
+        <!-- 신청자 목록이 동적으로 들어옵니다 -->
+      </div>
+      <div style="text-align: right;">
+        <button id="closeAdminModalBtn" class="btn-action">닫기</button>
+      </div>
+    </div>
+  </div>
 
   <!--
     type="module" 로 불러옵니다.

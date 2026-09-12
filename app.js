@@ -13,7 +13,11 @@ import {
   getDocs,
   deleteDoc,
   doc,
+  getDoc,
+  setDoc,
+  updateDoc,
   query,
+  where,
   orderBy
 } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
 import {
@@ -45,18 +49,48 @@ const provider = new GoogleAuthProvider();
 let currentUser = null;
 
 // ===================================================
-// 사용자 역할(Role) 관리: 교사(teacher) / 학생(student)
+// 사용자 역할(Role) 관리: 최고관리자(admin) / 교사(teacher) / 학생(student)
 // ===================================================
 
-// 교사(Teacher) 권한을 부여할 UID 목록입니다.
-// 선생님의 Google 계정 UID를 여기에 추가하시면 전체 메모 삭제/관리 권한이 주어집니다.
-const TEACHER_UIDS = [
-  // 선생님의 UID를 여기에 추가하세요 (예: "abc123xyz...")
+// 최고 관리자(Super Admin) 이메일 목록
+// 이 구글 계정으로 로그인하면 자동으로 최고 관리자 권한이 부여됩니다.
+const ADMIN_EMAILS = [
+  "yool.ssam@gmail.com"
 ];
 
-function isTeacher(user) {
-  if (!user) return false;
-  return TEACHER_UIDS.includes(user.uid);
+let currentUserRole = "student"; // "admin" | "teacher" | "student"
+let currentUserStatus = "none";  // "none" | "pending" | "approved" | "rejected"
+
+async function fetchUserRole(user) {
+  if (!user) {
+    currentUserRole = "student";
+    currentUserStatus = "none";
+    return;
+  }
+
+  // 1. 최고 관리자 확인
+  if (user.email && ADMIN_EMAILS.includes(user.email)) {
+    currentUserRole = "admin";
+    currentUserStatus = "approved";
+    return;
+  }
+
+  // 2. Firestore users 컬렉션에서 역할 및 승인 상태 확인
+  try {
+    const userDoc = await getDoc(doc(db, "users", user.uid));
+    if (userDoc.exists()) {
+      const data = userDoc.data();
+      currentUserRole = data.role || "student";
+      currentUserStatus = data.status || "none";
+    } else {
+      currentUserRole = "student";
+      currentUserStatus = "none";
+    }
+  } catch (error) {
+    console.error("사용자 권한 조회 실패:", error);
+    currentUserRole = "student";
+    currentUserStatus = "none";
+  }
 }
 
 // ===================================================
@@ -65,21 +99,57 @@ function isTeacher(user) {
 
 const userArea = document.getElementById("userArea");
 
-function updateUserArea() {
+async function updateUserArea() {
   if (!userArea) return;
   userArea.innerHTML = "";
 
   if (currentUser) {
-    const teacher = isTeacher(currentUser);
     const greeting = document.createElement("span");
-    if (teacher) {
-      greeting.innerHTML = `👩‍🏫 <strong>[교사] ${currentUser.displayName || "선생님"}</strong>님 환영합니다! (모든 메모 관리 권한) `;
-    } else {
-      greeting.innerHTML = `🧑‍🎓 <strong>[학생] ${currentUser.displayName || "학생"}</strong>님 환영합니다! <small style="color:#888;">(내 UID: ${currentUser.uid})</small> `;
-    }
-    userArea.appendChild(greeting);
 
+    if (currentUserRole === "admin") {
+      greeting.innerHTML = `👑 <strong>[최고 관리자] ${currentUser.displayName || "관리자"}</strong>님 환영합니다! `;
+      userArea.appendChild(greeting);
+
+      // 교사 신청 승인 관리 버튼
+      const manageBtn = document.createElement("button");
+      manageBtn.className = "btn-action btn-primary";
+      manageBtn.textContent = "교사 신청 관리";
+      manageBtn.addEventListener("click", openAdminModal);
+      userArea.appendChild(manageBtn);
+
+    } else if (currentUserRole === "teacher") {
+      greeting.innerHTML = `👩‍🏫 <strong>[교사] ${currentUser.displayName || "선생님"}</strong>님 환영합니다! (모든 메모 관리 권한) `;
+      userArea.appendChild(greeting);
+
+    } else {
+      // 학생 계정
+      if (currentUserStatus === "pending") {
+        greeting.innerHTML = `🧑‍🎓 <strong>[학생] ${currentUser.displayName || "학생"}</strong>님 <span style="color:#e37400; font-weight:bold;">(교사 승인 대기 중 ⏳)</span> `;
+        userArea.appendChild(greeting);
+      } else if (currentUserStatus === "rejected") {
+        greeting.innerHTML = `🧑‍🎓 <strong>[학생] ${currentUser.displayName || "학생"}</strong>님 <span style="color:#d93025;">(신청 반려됨)</span> `;
+        userArea.appendChild(greeting);
+
+        const reapplyBtn = document.createElement("button");
+        reapplyBtn.className = "btn-action";
+        reapplyBtn.textContent = "교사 다시 신청";
+        reapplyBtn.addEventListener("click", openApplyModal);
+        userArea.appendChild(reapplyBtn);
+      } else {
+        greeting.innerHTML = `🧑‍🎓 <strong>[학생] ${currentUser.displayName || "학생"}</strong>님 `;
+        userArea.appendChild(greeting);
+
+        const applyBtn = document.createElement("button");
+        applyBtn.className = "btn-action";
+        applyBtn.textContent = "교사 가입 신청";
+        applyBtn.addEventListener("click", openApplyModal);
+        userArea.appendChild(applyBtn);
+      }
+    }
+
+    // 로그아웃 버튼
     const logoutBtn = document.createElement("button");
+    logoutBtn.className = "btn-action";
     logoutBtn.textContent = "로그아웃";
     logoutBtn.addEventListener("click", async function () {
       try {
@@ -89,8 +159,10 @@ function updateUserArea() {
       }
     });
     userArea.appendChild(logoutBtn);
+
   } else {
     const loginBtn = document.createElement("button");
+    loginBtn.className = "btn-action btn-primary";
     loginBtn.textContent = "구글로 로그인";
     loginBtn.addEventListener("click", async function () {
       try {
@@ -107,6 +179,142 @@ function updateUserArea() {
       }
     });
     userArea.appendChild(loginBtn);
+  }
+}
+
+// ===================================================
+// 교사 신청 및 최고 관리자 승인 모달 제어
+// ===================================================
+
+const applyModal = document.getElementById("applyModal");
+const cancelApplyBtn = document.getElementById("cancelApplyBtn");
+const submitApplyBtn = document.getElementById("submitApplyBtn");
+const applyReason = document.getElementById("applyReason");
+
+function openApplyModal() {
+  if (applyModal) applyModal.style.display = "flex";
+}
+
+if (cancelApplyBtn) {
+  cancelApplyBtn.addEventListener("click", function () {
+    if (applyModal) applyModal.style.display = "none";
+  });
+}
+
+if (submitApplyBtn) {
+  submitApplyBtn.addEventListener("click", async function () {
+    if (!currentUser) return;
+    const reason = applyReason ? applyReason.value.trim() : "";
+    try {
+      await setDoc(doc(db, "users", currentUser.uid), {
+        email: currentUser.email,
+        displayName: currentUser.displayName || "신청자",
+        role: "student",
+        status: "pending",
+        reason: reason,
+        requestedAt: Date.now()
+      }, { merge: true });
+
+      alert("교사 가입 신청이 접수되었습니다! 최고 관리자의 승인 후 교사 권한이 주어집니다.");
+      if (applyModal) applyModal.style.display = "none";
+      await fetchUserRole(currentUser);
+      await updateUserArea();
+    } catch (error) {
+      console.error("교사 신청 실패:", error);
+      alert("신청 실패: " + error.message);
+    }
+  });
+}
+
+const adminModal = document.getElementById("adminModal");
+const closeAdminModalBtn = document.getElementById("closeAdminModalBtn");
+const applicantList = document.getElementById("applicantList");
+
+async function openAdminModal() {
+  if (adminModal) adminModal.style.display = "flex";
+  await loadApplicants();
+}
+
+if (closeAdminModalBtn) {
+  closeAdminModalBtn.addEventListener("click", function () {
+    if (adminModal) adminModal.style.display = "none";
+  });
+}
+
+async function loadApplicants() {
+  if (!applicantList) return;
+  applicantList.innerHTML = "<p style='color:#666; font-size:14px;'>불러오는 중...</p>";
+
+  try {
+    const q = query(collection(db, "users"), where("status", "==", "pending"));
+    const snapshot = await getDocs(q);
+
+    applicantList.innerHTML = "";
+    if (snapshot.empty) {
+      applicantList.innerHTML = "<p style='color:#666; font-size:14px;'>현재 승인 대기 중인 교사 신청이 없습니다.</p>";
+      return;
+    }
+
+    snapshot.forEach(function (docSnap) {
+      const applicant = docSnap.data();
+      const applicantId = docSnap.id;
+
+      const item = document.createElement("div");
+      item.className = "applicant-item";
+
+      const info = document.createElement("div");
+      info.className = "applicant-info";
+      info.innerHTML = `<strong>${applicant.displayName}</strong> (${applicant.email})<br>
+                        <small style="color:#666;">사유: ${applicant.reason || "없음"}</small>`;
+      item.appendChild(info);
+
+      const btnGroup = document.createElement("div");
+
+      const approveBtn = document.createElement("button");
+      approveBtn.className = "btn-action btn-primary";
+      approveBtn.textContent = "승인";
+      approveBtn.addEventListener("click", async function () {
+        if (confirm(`${applicant.displayName}님에게 교사 권한을 승인하시겠습니까?`)) {
+          try {
+            await updateDoc(doc(db, "users", applicantId), {
+              role: "teacher",
+              status: "approved",
+              approvedAt: Date.now()
+            });
+            alert("교사 권한이 승인되었습니다!");
+            await loadApplicants();
+          } catch (e) {
+            alert("승인 오류: " + e.message);
+          }
+        }
+      });
+      btnGroup.appendChild(approveBtn);
+
+      const rejectBtn = document.createElement("button");
+      rejectBtn.className = "btn-action btn-danger";
+      rejectBtn.textContent = "거절";
+      rejectBtn.addEventListener("click", async function () {
+        if (confirm(`${applicant.displayName}님의 교사 신청을 거절하시겠습니까?`)) {
+          try {
+            await updateDoc(doc(db, "users", applicantId), {
+              status: "rejected"
+            });
+            alert("신청이 거절되었습니다.");
+            await loadApplicants();
+          } catch (e) {
+            alert("거절 오류: " + e.message);
+          }
+        }
+      });
+      btnGroup.appendChild(rejectBtn);
+
+      item.appendChild(btnGroup);
+      applicantList.appendChild(item);
+    });
+
+  } catch (error) {
+    console.error("신청자 목록 불러오기 실패:", error);
+    applicantList.innerHTML = "<p style='color:red;'>목록 조회 실패: " + error.message + "</p>";
   }
 }
 
@@ -190,14 +398,15 @@ function makeMemo(memo) {
   const div = document.createElement("div");
   div.className = "memo";
 
-  // 교사(Teacher)만 모든 메모에 대해 삭제(×) 버튼이 나타납니다.
-  // 학생은 다른 사람 것은 물론 삭제 권한이 없습니다 (생성 전용).
-  if (currentUser && isTeacher(currentUser)) {
+  // 최고 관리자(admin) 또는 승인된 교사(teacher)만 삭제 버튼이 노출됩니다.
+  const hasManagementPermission = (currentUserRole === "admin" || currentUserRole === "teacher");
+
+  if (currentUser && hasManagementPermission) {
     const del = document.createElement("button");
     del.textContent = "×";
-    del.title = "메모 삭제 (교사 전용)";
+    del.title = "메모 삭제 (관리자/교사 전용)";
     del.addEventListener("click", async function () {
-      if (confirm("이 메모를 삭제하시겠습니까? (교사 권한)")) {
+      if (confirm("이 메모를 삭제하시겠습니까?")) {
         await deleteMemo(memo.id);
         await render();
       }
@@ -244,10 +453,11 @@ input.addEventListener("keydown", async function (e) {
 });
 
 // 로그인 상태 변화 감지 및 화면 초기화
-onAuthStateChanged(auth, function (user) {
+onAuthStateChanged(auth, async function (user) {
   currentUser = user;
-  updateUserArea();
-  render();
+  await fetchUserRole(user);
+  await updateUserArea();
+  await render();
 });
 
 input.focus();
