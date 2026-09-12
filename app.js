@@ -16,6 +16,13 @@ import {
   query,
   orderBy
 } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-firestore.js";
+import {
+  getAuth,
+  signInWithPopup,
+  GoogleAuthProvider,
+  signOut,
+  onAuthStateChanged
+} from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
 
 // Firebase 설정
 const firebaseConfig = {
@@ -28,9 +35,54 @@ const firebaseConfig = {
   measurementId: "G-Z2NL2S2VKQ"
 };
 
-// Firebase 및 Firestore 초기화
+// Firebase 및 서비스 초기화
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+const auth = getAuth(app);
+const provider = new GoogleAuthProvider();
+
+// 현재 로그인한 사용자 정보 (로그인 전에는 null)
+let currentUser = null;
+
+// ===================================================
+// 로그인 상태 표시 영역 관리
+// ===================================================
+
+const userArea = document.getElementById("userArea");
+
+function updateUserArea() {
+  if (!userArea) return;
+  userArea.innerHTML = "";
+
+  if (currentUser) {
+    const greeting = document.createElement("span");
+    greeting.textContent = (currentUser.displayName || "사용자") + "님 환영합니다! ";
+    userArea.appendChild(greeting);
+
+    const logoutBtn = document.createElement("button");
+    logoutBtn.textContent = "로그아웃";
+    logoutBtn.addEventListener("click", async function () {
+      try {
+        await signOut(auth);
+      } catch (error) {
+        console.error("로그아웃 실패:", error);
+      }
+    });
+    userArea.appendChild(logoutBtn);
+  } else {
+    const loginBtn = document.createElement("button");
+    loginBtn.textContent = "구글로 로그인";
+    loginBtn.addEventListener("click", async function () {
+      try {
+        await signInWithPopup(auth, provider);
+      } catch (error) {
+        console.error("로그인 실패:", error);
+        alert("로그인에 실패했습니다. Firebase 콘솔에서 Authentication 및 Google 로그인이 켜져 있는지 확인해 주세요.");
+      }
+    });
+    userArea.appendChild(loginBtn);
+  }
+}
 
 
 // ===================================================
@@ -59,15 +111,21 @@ async function loadMemos() {
 }
 
 // 메모를 새로 씁니다.
-// 백엔드 2: 여기에 "누가 썼는지"(uid)를 함께 저장하게 됩니다.
+// 로그인한 사용자의 uid를 함께 저장합니다.
 async function addMemo(text) {
+  if (!currentUser) {
+    alert("메모를 쓰려면 먼저 구글 로그인을 해 주세요.");
+    return;
+  }
   try {
     await addDoc(collection(db, "memos"), {
       text: text,
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      uid: currentUser.uid
     });
   } catch (error) {
     console.error("메모 쓰기 실패:", error);
+    alert("메모 저장 실패: " + error.message);
   }
 }
 
@@ -101,13 +159,16 @@ function makeMemo(memo) {
   const div = document.createElement("div");
   div.className = "memo";
 
-  const del = document.createElement("button");
-  del.textContent = "×";
-  del.addEventListener("click", async function () {
-    await deleteMemo(memo.id);
-    await render();
-  });
-  div.appendChild(del);
+  // 자신이 작성한 메모인 경우에만 삭제(×) 버튼을 보여줍니다.
+  if (currentUser && memo.uid === currentUser.uid) {
+    const del = document.createElement("button");
+    del.textContent = "×";
+    del.addEventListener("click", async function () {
+      await deleteMemo(memo.id);
+      await render();
+    });
+    div.appendChild(del);
+  }
 
   const span = document.createElement("span");
   span.textContent = memo.text;
@@ -128,6 +189,11 @@ input.addEventListener("keydown", async function (e) {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
 
+    if (!currentUser) {
+      alert("메모를 쓰려면 먼저 구글 로그인을 해 주세요.");
+      return;
+    }
+
     const text = input.value.trim();
     if (text === "") return;
 
@@ -137,7 +203,13 @@ input.addEventListener("keydown", async function (e) {
   }
 });
 
+// 로그인 상태 변화 감지 및 첫 화면 초기화
+onAuthStateChanged(auth, function (user) {
+  currentUser = user;
+  updateUserArea();
+  render();
+});
 
-// 첫 화면 그리기
-render();
+
+// 초기화
 input.focus();
