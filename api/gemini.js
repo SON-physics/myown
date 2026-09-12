@@ -48,8 +48,8 @@ export default async function handler(req, res) {
     });
   }
 
-  // Google AI Studio의 무료 티어 제공 모델: gemini-2.5-flash
-  const modelName = "gemini-2.5-flash";
+  // Google AI Studio의 무료 티어 제공 모델: gemini-3.6-flash
+  const modelName = "gemini-3.6-flash";
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
   // 프롬프트 및 시스템 지침 구성
