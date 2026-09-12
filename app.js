@@ -77,7 +77,13 @@ function updateUserArea() {
         await signInWithPopup(auth, provider);
       } catch (error) {
         console.error("로그인 실패:", error);
-        alert("로그인에 실패했습니다. Firebase 콘솔에서 Authentication 및 Google 로그인이 켜져 있는지 확인해 주세요.");
+        if (error.code === "auth/unauthorized-domain") {
+          alert("Firebase 콘솔의 [Authentication > 설정 > 승인된 도메인]에 현재 도메인(" + window.location.hostname + ")을 추가해야 합니다.");
+        } else if (error.code === "auth/configuration-not-found") {
+          alert("Firebase 콘솔의 [Authentication > Sign-in method]에서 Google 로그인을 사용 설정해 주세요.");
+        } else {
+          alert("로그인에 실패했습니다: " + error.message);
+        }
       }
     });
     userArea.appendChild(loginBtn);
@@ -111,10 +117,14 @@ async function loadMemos() {
 }
 
 // 메모를 새로 씁니다.
-// 로그인한 사용자의 uid를 함께 저장합니다.
+// 로그인한 사용자의 uid를 함께 저장하며, 5글자 이상일 때만 등록됩니다.
 async function addMemo(text) {
   if (!currentUser) {
     alert("메모를 쓰려면 먼저 구글 로그인을 해 주세요.");
+    return;
+  }
+  if (text.trim().length < 5) {
+    alert("메모는 다섯 글자 이상 입력해 주세요.");
     return;
   }
   try {
@@ -196,6 +206,11 @@ input.addEventListener("keydown", async function (e) {
 
     const text = input.value.trim();
     if (text === "") return;
+
+    if (text.length < 5) {
+      alert("메모는 다섯 글자 이상 입력해 주세요.");
+      return;
+    }
 
     await addMemo(text);
     input.value = "";
