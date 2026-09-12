@@ -28,16 +28,9 @@ import {
   onAuthStateChanged
 } from "https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js";
 
-// Firebase 설정
-const firebaseConfig = {
-  apiKey: "AIzaSyCCTftXhmizqF7bBbeu6pUEmYDWMUgKAQ8",
-  authDomain: "hakathon-test-7a4c5.firebaseapp.com",
-  projectId: "hakathon-test-7a4c5",
-  storageBucket: "hakathon-test-7a4c5.firebasestorage.app",
-  messagingSenderId: "823817399590",
-  appId: "1:823817399590:web:08211990776225664525e7",
-  measurementId: "G-Z2NL2S2VKQ"
-};
+// Firebase 설정 불러오기 (클라이언트 소스코드에 API 키를 노출하지 않고 서버리스 함수에서 수신)
+const configRes = await fetch("/api/config");
+const firebaseConfig = await configRes.json();
 
 // Firebase, Firestore 및 Auth 초기화
 const app = initializeApp(firebaseConfig);
@@ -52,11 +45,18 @@ let currentUser = null;
 // 사용자 역할(Role) 관리: 최고관리자(admin) / 교사(teacher) / 학생(student)
 // ===================================================
 
-// 최고 관리자(Super Admin) 이메일 목록
-// 이 구글 계정으로 로그인하면 자동으로 최고 관리자 권한이 부여됩니다.
-const ADMIN_EMAILS = [
-  "yool.ssam@gmail.com"
+// 최고 관리자 판별용 단방향 암호화(SHA-256) 해시 목록
+// 소스코드에 선생님의 실제 이메일 주소가 전혀 노출되지 않습니다.
+const ADMIN_EMAIL_HASHES = [
+  "ead9a9bab6759726f0a211486cdd125f2a09515712bffcdfbab7c42f25b63fb3"
 ];
+
+// 문자열을 SHA-256 해시로 변환하는 헬퍼 함수
+async function sha256(message) {
+  const msgBuffer = new TextEncoder().encode(message.trim().toLowerCase());
+  const hashBuffer = await crypto.subtle.digest("SHA-256", msgBuffer);
+  return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, "0")).join("");
+}
 
 let currentUserRole = "student"; // "admin" | "teacher" | "student"
 let currentUserStatus = "none";  // "none" | "pending" | "approved" | "rejected"
@@ -68,11 +68,20 @@ async function fetchUserRole(user) {
     return;
   }
 
-  // 1. 최고 관리자 확인
-  if (user.email && ADMIN_EMAILS.includes(user.email)) {
-    currentUserRole = "admin";
-    currentUserStatus = "approved";
-    return;
+  // 1. 최고 관리자 확인 (단방향 해시로 비교하여 이메일 비공개 유지)
+  if (user.email) {
+    const emailHash = await sha256(user.email);
+    if (ADMIN_EMAIL_HASHES.includes(emailHash)) {
+      currentUserRole = "admin";
+      currentUserStatus = "approved";
+      // Firestore users 컬렉션에도 관리자 권한 동기화 (보안 규칙 통과 보장)
+      try {
+        await setDoc(doc(db, "users", user.uid), { role: "admin", status: "approved" }, { merge: true });
+      } catch (e) {
+        console.error("관리자 상태 동기화 오류:", e);
+      }
+      return;
+    }
   }
 
   // 2. Firestore users 컬렉션에서 역할 및 승인 상태 확인

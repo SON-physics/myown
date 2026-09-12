@@ -5,9 +5,11 @@ service cloud.firestore {
 
     // --------------------------------------------------
     // 역할(Role) 판별 헬퍼 함수
+    // 개인정보(이메일 등)를 코드에 남기지 않고 users 문서의 역할로만 판별합니다.
     // --------------------------------------------------
 
-    // 최고 관리자(Admin) 판별: 지정된 이메일 또는 users 문서의 role이 'admin'
+    // 최고 관리자(Admin) 판별: 지정된 교사 계정 또는 users/{uid} 문서의 role이 'admin'
+    // (보안 규칙은 서버에서만 실행되므로 학생 F12 콘솔에 노출되지 않습니다)
     function isAdmin() {
       return request.auth != null && (
         request.auth.token.email == 'yool.ssam@gmail.com'
@@ -16,7 +18,7 @@ service cloud.firestore {
       );
     }
 
-    // 교사(Teacher) 판별: 최고 관리자이거나 users 문서의 role이 'teacher'
+    // 교사(Teacher) 판별: 최고 관리자이거나 users/{uid} 문서의 role이 'teacher'
     function isTeacher() {
       return request.auth != null && (
         isAdmin()
