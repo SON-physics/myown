@@ -5,19 +5,23 @@ service cloud.firestore {
 
     // memos 컬렉션 규칙
     match /memos/{memoId} {
-      // 1. 읽기: 누구나 가능
+      // 1. 읽기: 담벼락 메모는 반 친구들 누구나 볼 수 있어야 하므로 허용
       allow read: if true;
 
-      // 2. 작성: 문자열이면서 5글자 이상일 때만 허용
-      allow create: if request.resource.data.text is string
+      // 2. 작성: 로그인한 사용자 + 본인 UID + 문자열이면서 5글자 이상
+      allow create: if request.auth != null 
+                    && request.resource.data.uid == request.auth.uid
+                    && request.resource.data.text is string
                     && request.resource.data.text.size() >= 5;
 
-      // 3. 수정: 문자열이면서 5글자 이상일 때만 허용
-      allow update: if request.resource.data.text is string
+      // 3. 수정: 본인이 작성한 메모 + 문자열이면서 5글자 이상
+      allow update: if request.auth != null 
+                    && resource.data.uid == request.auth.uid
+                    && request.resource.data.text is string
                     && request.resource.data.text.size() >= 5;
 
-      // 4. 삭제: 허용
-      allow delete: if true;
+      // 4. 삭제: 본인이 작성한 메모만 삭제 허용
+      allow delete: if request.auth != null && resource.data.uid == request.auth.uid;
     }
 
   }
