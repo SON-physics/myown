@@ -45,6 +45,21 @@ const provider = new GoogleAuthProvider();
 let currentUser = null;
 
 // ===================================================
+// 사용자 역할(Role) 관리: 교사(teacher) / 학생(student)
+// ===================================================
+
+// 교사(Teacher) 권한을 부여할 UID 목록입니다.
+// 선생님의 Google 계정 UID를 여기에 추가하시면 전체 메모 삭제/관리 권한이 주어집니다.
+const TEACHER_UIDS = [
+  // 선생님의 UID를 여기에 추가하세요 (예: "abc123xyz...")
+];
+
+function isTeacher(user) {
+  if (!user) return false;
+  return TEACHER_UIDS.includes(user.uid);
+}
+
+// ===================================================
 // 로그인 상태 표시 영역 관리
 // ===================================================
 
@@ -55,8 +70,13 @@ function updateUserArea() {
   userArea.innerHTML = "";
 
   if (currentUser) {
+    const teacher = isTeacher(currentUser);
     const greeting = document.createElement("span");
-    greeting.textContent = (currentUser.displayName || "사용자") + "님 환영합니다! ";
+    if (teacher) {
+      greeting.innerHTML = `👩‍🏫 <strong>[교사] ${currentUser.displayName || "선생님"}</strong>님 환영합니다! (모든 메모 관리 권한) `;
+    } else {
+      greeting.innerHTML = `🧑‍🎓 <strong>[학생] ${currentUser.displayName || "학생"}</strong>님 환영합니다! <small style="color:#888;">(내 UID: ${currentUser.uid})</small> `;
+    }
     userArea.appendChild(greeting);
 
     const logoutBtn = document.createElement("button");
@@ -170,13 +190,17 @@ function makeMemo(memo) {
   const div = document.createElement("div");
   div.className = "memo";
 
-  // 자신이 작성한 메모인 경우에만 삭제(×) 버튼을 보여줍니다.
-  if (currentUser && memo.uid === currentUser.uid) {
+  // 교사(Teacher)만 모든 메모에 대해 삭제(×) 버튼이 나타납니다.
+  // 학생은 다른 사람 것은 물론 삭제 권한이 없습니다 (생성 전용).
+  if (currentUser && isTeacher(currentUser)) {
     const del = document.createElement("button");
     del.textContent = "×";
+    del.title = "메모 삭제 (교사 전용)";
     del.addEventListener("click", async function () {
-      await deleteMemo(memo.id);
-      await render();
+      if (confirm("이 메모를 삭제하시겠습니까? (교사 권한)")) {
+        await deleteMemo(memo.id);
+        await render();
+      }
     });
     div.appendChild(del);
   }

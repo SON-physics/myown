@@ -3,25 +3,62 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // memos 컬렉션 규칙
+    // --------------------------------------------------
+    // 역할(Role) 판별 헬퍼 함수
+    // --------------------------------------------------
+
+    // 교사(Teacher) 판별:
+    // 1) 아래 TEACHER_UIDS 목록에 포함되어 있거나,
+    // 2) users/{uid} 문서의 role이 'teacher'인 경우
+    function isTeacher() {
+      return request.auth != null && (
+        request.auth.uid in [
+          'TEACHER_UID_PLACEHOLDER' // 선생님의 UID를 여기에 추가할 수 있습니다
+        ]
+        || (exists(/databases/$(database)/documents/users/$(request.auth.uid))
+            && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'teacher')
+      );
+    }
+
+    // 학생(Student) 판별: 로그인되어 있고 교사가 아닌 모든 사용자
+    function isStudent() {
+      return request.auth != null && !isTeacher();
+    }
+
+    // --------------------------------------------------
+    // 담벼락 메모(memos) 컬렉션 규칙
+    // --------------------------------------------------
     match /memos/{memoId} {
-      // 1. 읽기: 담벼락 메모는 반 친구들 누구나 볼 수 있어야 하므로 허용
+      // 1. 읽기: 누구나 가능 (선생님, 학생 모두 담벼락 열람)
       allow read: if true;
 
-      // 2. 작성: 로그인한 사용자 + 본인 UID + 문자열이면서 5글자 이상
-      allow create: if request.auth != null 
-                    && request.resource.data.uid == request.auth.uid
+      // 2. 생성:
+      // - 교사: 모든 메모 생성 가능
+      // - 학생: 본인 UID로만 5글자 이상 생성 가능 (타인 명의 작성 불가)
+      allow create: if request.auth != null && (
+        isTeacher() || (
+          isStudent()
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.text is string
+          && request.resource.data.text.size() >= 5
+        )
+      );
+
+      // 3. 수정: 교사만 모든 메모 수정 가능 (학생은 다른 사람 것은 물론 수정 불가)
+      allow update: if isTeacher()
                     && request.resource.data.text is string
                     && request.resource.data.text.size() >= 5;
 
-      // 3. 수정: 본인이 작성한 메모 + 문자열이면서 5글자 이상
-      allow update: if request.auth != null 
-                    && resource.data.uid == request.auth.uid
-                    && request.resource.data.text is string
-                    && request.resource.data.text.size() >= 5;
+      // 4. 삭제: 교사만 모든 메모 삭제 가능 (학생은 삭제 권한 없음)
+      allow delete: if isTeacher();
+    }
 
-      // 4. 삭제: 본인이 작성한 메모만 삭제 허용
-      allow delete: if request.auth != null && resource.data.uid == request.auth.uid;
+    // --------------------------------------------------
+    // 사용자(users) 컬렉션 규칙 (역할 저장용)
+    // --------------------------------------------------
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      allow write: if isTeacher() || (request.auth != null && request.auth.uid == userId);
     }
 
   }
